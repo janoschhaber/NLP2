@@ -16,10 +16,14 @@ __status__ = "First Draft"
 
 import numpy as np
 import time
+from nltk.translate import AlignedSent
+from nltk.translate import Alignment
+from nltk.translate import metrics
 
 INDEX_WORDS = True
 VERBOSE = False
 TRAIN_LIMIT = 1000
+ITERATIONS = 3
 VAL_LIMIT = 1
 
 def read_file(filename):
@@ -94,8 +98,6 @@ def get_perplexity(e_pred_sent, f_sent, trans_probs, nr_e_words):
     """
     perplexity = 0
     for index, e_pred in enumerate(e_pred_sent):
-        # TODO FIX: One of the input formats is wrong!
-        print get_trans_prob(e_pred, f_sent[index], trans_probs, nr_e_words)
         perplexity += np.log2(get_trans_prob(e_pred, f_sent[index], trans_probs, nr_e_words))
     return perplexity
 
@@ -134,7 +136,6 @@ def align_sentences(f_sents, f_dict, e_sents, e_dict, trans_probs):
                         e_word = e_dict[e_word]
                     else:
                         e_word = -1
-
                 e_probs[e_index] = get_trans_prob(e_word, f_word, trans_probs, nr_e_words)
                 e_index += 1
             sent_alignment[f_index] = e_sent[np.argmax(e_probs)]
@@ -144,7 +145,7 @@ def align_sentences(f_sents, f_dict, e_sents, e_dict, trans_probs):
     return translations
 
 
-def evaluate_model(f_sents, f_dict, e_sents, e_dict, trans_probs):
+def evaluate_model(f_sents, f_dict, e_sents, e_dict, trans_probs, gold_alignments):
     """
     Returns the current model performance in terms of translation perplexity
     :param f_sents: the set of french sentences
@@ -156,14 +157,21 @@ def evaluate_model(f_sents, f_dict, e_sents, e_dict, trans_probs):
     nr_e_words = len(e_dict)
 
     sent_perplexities = np.zeros(len(f_sents))
+    sent_AERs = np.zeros(len(f_sents))
     translations = align_sentences(f_sents, f_dict, e_sents, e_dict, trans_probs)
     for index, e_pred_sent in enumerate(translations):
-        print e_pred_sent
+        print ("Predicted alignment: {}".format(e_pred_sent))
         e_pred_sent = index_sentence(e_pred_sent, e_dict)
-        print e_pred_sent
-        sent_perplexities[index] = get_perplexity(e_pred_sent, f_sents[index], trans_probs, nr_e_words)
-        print sent_perplexities[index]
-    return -np.sum(sent_perplexities)
+        f_sent_indexed = index_sentence([word.lower() for word in f_sents[index].split()], f_dict)
+        sent_perplexities[index] = get_perplexity(e_pred_sent, f_sent_indexed, trans_probs, nr_e_words)
+
+        # TODO: Implement AER calculation
+        f_sent = [word.lower() for word in f_sents[index].split()]
+        ref = Alignment([(0, 0), (1, 1), (2, 2)])
+        test = Alignment([(0, 0), (1, 2), (2, 1)])
+        print ( metrics.alignment_error_rate(ref, test))
+
+    return [-np.sum(sent_perplexities), sum(sent_AERs)/len(sent_AERs)]
 
 
 def index_sentence(sentence, dictionary):
@@ -199,7 +207,8 @@ def produce_output(f_sents, f_dict, e_sents, e_dict, trans_probs, filename='resu
     translations = align_sentences(f_sents, f_dict, e_sents, e_dict, trans_probs)
     for index, e_pred_sent in enumerate(translations):
         e_pred_sent = index_sentence(e_pred_sent, e_dict)
-        sent_perplexities[index] = get_perplexity(e_pred_sent, f_sents[index], trans_probs, nr_e_words)
+        f_sent = index_sentence([word.lower() for word in f_sents[index].split()], f_dict)
+        sent_perplexities[index] = get_perplexity(e_pred_sent, f_sent, trans_probs, nr_e_words)
 
     perplexity = -np.sum(sent_perplexities)
     result = zip(f_sents, translations, e_sents)
@@ -209,6 +218,27 @@ def produce_output(f_sents, f_dict, e_sents, e_dict, trans_probs, filename='resu
     for trio in result:
         f.write("{}was translated as \n{} \ngold standard translation: \n{}\n\n".format(trio[0], " ".join(trio[1]), trio[2]))
     f.close()
+
+
+def get_gold_alignments(filename = 'validation/dev.wa.nonullalign'):
+    """
+    Returns a NLTK tuple representation of the gold standard alignments as specified in an EGYPT formatted file
+    :param filename: path to the file with the alignment annotations
+    :return: a list of tuples of gold standard alignments
+    """
+    lines = read_file(filename)
+    alignments = []
+    sent_align = []
+    index = 1
+    for line in lines:
+        annotation = [int(word) for word in line.split()[0:3]]
+        if annotation[0] == index:
+            sent_align.append((annotation[1], annotation[2]))
+        else:
+            index += 1
+            alignments.append(sent_align)
+            sent_align = [(annotation[1], annotation[2])]
+    return alignments
 
 
 def main():
@@ -231,6 +261,8 @@ def main():
         print("ERROR: Validation data not aligned properly!")
         quit()
     print ("Validation set size: {} sentences".format(len(v_f_lines)))
+    gold_alignments = get_gold_alignments()
+
 
     e_words = set(word.lower() for line in e_lines for word in line.split())
     e_dict = wordlist2dict(e_words.union("NULL"))
@@ -248,8 +280,8 @@ def main():
     total = {}
 
     last_perplexity = None
-    while True:
-
+    #while True:
+    for i in range(0,ITERATIONS):
         counter = 0
         for pair in aligned:
             e_sent = [word.lower() for word in pair[0].split()]
@@ -308,10 +340,11 @@ def main():
                     trans_probs[f_word] = {e_word : e_f_counts[f_word][e_word] / total[f_word]}
                     # if VERBOSE: print e_f_counts[f_word][e_word]
 
-        perplexity = evaluate_model(v_f_lines, f_dict, v_e_lines, e_dict, trans_probs)
+        [perplexity, AER] = evaluate_model(v_f_lines, f_dict, v_e_lines, e_dict, trans_probs, gold_alignments)
         print ("Perplexity: {}".format(perplexity))
+        print ("AER: {}".format(AER))
         if last_perplexity is None: last_perplexity = perplexity
-        elif perplexity / last_perplexity > 0.5: break
+        # elif perplexity / last_perplexity > 0.5: break
         last_perplexity = perplexity
 
     produce_output(v_f_lines, f_dict, v_e_lines, e_dict, trans_probs)
