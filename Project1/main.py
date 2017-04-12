@@ -10,20 +10,21 @@ __author__ = "Edwin Lima Valladares, Ioanna Sanida, Janosch Haber"
 __copyright__ = "Copyright 2017"
 __credits__ = ["Edwin Lima Valladares, Ioanna Sanida, Janosch Haber"]
 __license__ = "GPL"
-__version__ = "1.0.1"
+__version__ = "1.0.4"
 __email__ = "janosch.haber@student.uva.nl"
-__status__ = "First Draft"
+__status__ = "IBM1 Debugging Version"
 
 import numpy as np
 import time
 from nltk.translate import Alignment
 from nltk.translate import metrics
 
-INDEX_WORDS = True
+INDEX_WORDS = False
 VERBOSE = False
-TRAIN_LIMIT = 1000
-ITERATIONS = 3
-VAL_LIMIT = 1
+TRAIN_LIMIT = 10000
+ITERATIONS = 5
+VAL_LIMIT = 0
+
 
 def read_file(filename):
     """
@@ -60,147 +61,143 @@ def inverse_dict(dictionary):
     return inv_dict
 
 
-def get_trans_prob(e_word, f_word, trans_probs, nr_e_words):
+def get_trans_prob(f_word, e_word, trans_probs, nr_f_words):
     """
     Returns the expected translation probability of a given pair of aligned words
-    :param e_word: english word
     :param f_word: french word
-    :param trans_probs: dictionary[f_word][e_word] with all recorded conditional probabilities p(e_word|f_word)
-    :param nr_e_words: total number of encountered english words
-    :return: conditional probability p(e_word|f_word)
+    :param e_word: english word
+    :param trans_probs: dictionary[e_word][f_word] with all recorded conditional probabilities p(f_word|e_word)
+    :param nr_f_words: total number of french corpus word types
+    :return: conditional probability p(f_word|e_word)
     """
-    if f_word in trans_probs:
-        if e_word in trans_probs[f_word]:
-            # print("Found: Probability of {} given {} is {}".format(e_word, f_word, trans_probs[f_word][e_word]))
-            return trans_probs[f_word][e_word]
+    if e_word in trans_probs:
+        if f_word in trans_probs[e_word]:
+            # print("Found: Probability of {} given {} is {}".format(f_word, e_word, trans_probs[e_word][f_word]))
+            return trans_probs[e_word][f_word]
         else:
-            f_nr_entries = len(trans_probs[f_word])
-            f_missing = nr_e_words - f_nr_entries
-            f_prob_mass = 0
-            for entry in trans_probs[f_word].values():
-                f_prob_mass += entry
-            if float(1 - f_prob_mass) / f_missing == 0:
-                print("Not Found: Probability of {} given {} is {} with a remaining probability mass of {} and {} words not assigned yet ".format(e_word, f_word, float(1 - f_prob_mass) / f_missing, float(1 - f_prob_mass), f_missing))
-                print trans_probs[f_word].values()
-                return float(1) / nr_e_words
-            return float(1 - f_prob_mass) / f_missing
+            e_nr_entries = len(trans_probs[e_word])
+            e_missing = nr_f_words - e_nr_entries
+            e_prob_mass = 0
+            for entry in trans_probs[e_word].values():
+                e_prob_mass += entry
+            # TODO: Check for zero mass error:
+            # if float(1 - e_prob_mass) / e_missing == 0:
+            #   print "ERROR! Remaining robability mass is zero!"
+
+            # print("Not Found: Probability of {} given {} is {} with a remaining probability mass of {} and {} words not assigned yet ".format(f_word, e_word, float(1 - e_prob_mass) / e_missing, float(1 - e_prob_mass), e_missing))
+            return float(1 - e_prob_mass) / e_missing
     else:
-        # print("No Key: Probability of {} given {} is {}".format(e_word, f_word, float(1) / nr_e_words))
-        return float(1) / nr_e_words
+        # print("No Key: Probability of {} given {} is {}".format(f_word, e_word, float(1) / nr_f_words))
+        return float(1) / nr_f_words
 
 
-def get_perplexity(e_pred_sent, f_sent, trans_probs, nr_e_words):
+def get_perplexity(e_pred_sent, f_sent, trans_probs, nr_f_words):
     """
     Returns a sentence's translation's perplexity given the current state of the model
     :param e_pred_sent: the predicted translation
-    :param f_sent: the original sentence
-    :param trans_probs: the current model (translation probabilities p(e_word|f_word)) = trans_probs[f_word][e_word] = probability
-    :param nr_e_words: total number of english words encountered in training
+    :param f_sent: the french sentence
+    :param trans_probs: the current model (translation probabilities p(f_word|e_word)) = trans_probs[e_word][f_word] = probability
+    :param nr_f_words: total number of french corpus word types
     :return: the sentence's translation's perplexity given the current state of the model
     """
     perplexity = 0
     for index, e_pred in enumerate(e_pred_sent):
-        print ("Probability for {} given {} is {}".format(e_pred, f_sent[index],
-        get_trans_prob(e_pred, f_sent[index], trans_probs, nr_e_words)))
-        perplexity += np.log2(get_trans_prob(e_pred, f_sent[index], trans_probs, nr_e_words))
+        perplexity += np.log2(get_trans_prob(f_sent[index], e_pred, trans_probs, nr_f_words))
     return perplexity
 
 
-def get_likelihood(e_pred_sent, f_sent, trans_probs, nr_e_words):
+def get_likelihood(e_pred_sent, f_sent, trans_probs, nr_f_words):
     """
-    Returns a predicted translation's likelihood given the current model
+    Returns a predicted sentence's likelihood given the current model
     :param e_pred_sent: the predicted translation
-    :param f_sent: the original sentence
-    :param trans_probs: the current model (translation probabilities p(e_word|f_word)) = trans_probs[f_word][e_word] = probability
-    :param nr_e_words: total number of english words encountered in training
-    :return: a predicted translation's likelihood given the current model
+    :param f_sent: the french sentence
+    :param trans_probs: the current model (translation probabilities p(f_word|e_word)) = trans_probs[e_word][f_word] = probability
+    :param nr_f_words: total number of french corpus word types
+    :return: a predicted sentence's likelihood
     """
     # TODO: Check for underflow
     likelihood = 1
     for index, e_pred in enumerate(e_pred_sent):
-        likelihood *= get_trans_prob(e_pred, f_sent[index], trans_probs, nr_e_words)
+        likelihood *= get_trans_prob(f_sent[index], e_pred, trans_probs, nr_f_words)
     return likelihood
 
 
-def align_sentences(e_sents, f_sents, e_dict, trans_probs):
+def align_sentences(e_sents, f_sents, trans_probs, nr_f_words):
     """
     Translates a given set of sentences using the specified model
-    :param v_aligned: zipped list of aligned validation set sentences
-    :param e_dict: string to integer index dictionary for english
-    :param f_dict: string to integer index dictionary for french
+    :param e_sents: english sentences
+    :param f_sents: french sentences
     :param trans_probs: the current model (translation probabilities p(e_word|f_word)) = trans_probs[f_word][e_word] = probability
+    :param nr_f_words: total number of french corpus word types
     :return: a zipped list of translations and alignments
     """
-    nr_e_words = len(e_dict)
     translations = [None] * len(f_sents)
     alignments = [None] * len(f_sents)
 
     aligned = zip(e_sents, f_sents)
     for pair_id, pair in enumerate(aligned):
         e_sent = pair[0]
-        print e_sent
         f_sent = pair[1]
-        print f_sent
         sent_pred_trans = [None] * len(f_sent)
         sent_alignment = [None] * len(f_sent)
 
         for f_index, f_word in enumerate(f_sent):
-            print("Translating {}".format(f_word))
+            # print("Aligning {}".format(f_word))
             e_probs = np.zeros(len(e_sent))
             for e_index, e_word in enumerate(e_sent):
-                e_probs[e_index] = get_trans_prob(e_word, f_word, trans_probs, nr_e_words)
-                print("Probability for {} is {}".format(e_word, e_probs[e_index]))
+                e_probs[e_index] = get_trans_prob(f_word, e_word, trans_probs, nr_f_words)
+                # print("Probability for {} is {}".format(e_word, e_probs[e_index]))
             sent_pred_trans[f_index] = e_sent[np.argmax(e_probs)]
-            sent_alignment[f_index] = (f_index+1, np.argmax(e_probs)+1)
+            # print("Most likely alignment is {}".format(e_sent[np.argmax(e_probs)]))
+            sent_alignment[f_index] = (np.argmax(e_probs)+1, f_index+1)
 
         translations[pair_id] = sent_pred_trans
         alignments[pair_id] = sent_alignment
     return zip(translations, alignments)
 
 
-def evaluate_model(e_sents, f_sents, e_sents_orig, e_dict, e_dict_inv, trans_probs, gold_alignments):
+def evaluate_model(f_sents, e_sents_orig, nr_f_words, e_sents, e_dict_inv, trans_probs, gold_alignments):
     """
     Returns the current model performance in terms of translation perplexity
     :param f_sents: the set of french sentences
-    :param f_dict: string to integer index dictionary for french
-    :param e_dict: string to integer index dictionary for english
-    :param trans_probs: the current model (translation probabilities p(e_word|f_word)) = trans_probs[f_word][e_word] = probability
-    :return: translation perplexity
+    :param e_sents_orig:
+    :param nr_f_words:
+    :param e_sents:
+    :param e_dict_inv:
+    :param trans_probs:
+    :param gold_alignments:
+    :return:
     """
-    nr_e_words = len(e_dict)
-
     sent_perplexities = np.zeros(len(f_sents))
     sent_likelihoods = np.zeros(len(f_sents))
-    sent_AERs = np.zeros(len(f_sents))
+    sent_aers = np.zeros(len(f_sents))
 
-    model_output = align_sentences(e_sents, f_sents, e_dict, trans_probs)
+    model_output = align_sentences(e_sents, f_sents, trans_probs, nr_f_words)
     for index, pair in enumerate(model_output):
         e_pred_sent = pair[0]
         f_sent = f_sents[index]
         alignment = pair[1]
 
-        print ("Predicted translation: {}".format(decode_sentence(e_pred_sent, e_dict_inv)))
-        print ("Actual translation: {}".format(e_sents_orig[index]))
-        print ("Alignment: {}".format(alignment))
-        print ("Gold standard alignment: {}".format(gold_alignments[index]))
+        if VERBOSE: print ("Sentence: {}".format(f_sent))
+        if VERBOSE:
+            if INDEX_WORDS: print ("Predicted translation: {}".format(decode_sentence(e_pred_sent, e_dict_inv)))
+            else: print ("Predicted translation: {}".format(e_pred_sent))
+        if VERBOSE: print ("Actual translation: {}".format(e_sents_orig[index]))
+        if VERBOSE: print ("Alignment: {}".format(alignment))
+        if VERBOSE: print ("Gold standard alignment: {}".format(gold_alignments[index]))
 
-        sent_perplexities[index] = get_perplexity(e_pred_sent, f_sent, trans_probs, nr_e_words)
-        sent_likelihoods[index] = get_likelihood(e_pred_sent, f_sent, trans_probs, nr_e_words)
+        sent_perplexities[index] = get_perplexity(e_pred_sent, f_sent, trans_probs, nr_f_words)
+        sent_likelihoods[index] = get_likelihood(e_pred_sent, f_sent, trans_probs, nr_f_words)
+        sent_aers[index] = metrics.alignment_error_rate(Alignment(gold_alignments[index]), Alignment(alignment))
 
-        # TODO: Fix AER
-        # ref = Alignment([(0, 0), (1, 1), (2, 2)])
-        # test = Alignment([(0, 0), (1, 2), (2, 1)])
-        # print metrics.alignment_error_rate(ref, test)
-
-        sent_AERs[index] = 1 # metrics.alignment_error_rate(gold_alignments[index], alignment)
-
-    return [-np.sum(sent_perplexities), sum(sent_likelihoods)/len(sent_likelihoods), sum(sent_AERs)/len(sent_AERs)]
+    return [-np.sum(sent_perplexities), sum(sent_likelihoods)/len(sent_likelihoods), sum(sent_aers)/len(sent_aers)]
 
 
 def encode_sentence(sentence, dictionary):
     """
     Returns the indexed version of the input sentence
     :param sentence: a string list sentence
+    :param dictionary: the dictionary to encode the sentence with
     :return: the integer index list sentence encoding
     """
     encoded = np.zeros(len(sentence))
@@ -216,6 +213,7 @@ def decode_sentence(sentence, dictionary):
     """
     Returns the decoded version of the input sentence
     :param sentence: an indexed list sentence
+    :param dictionary: the dictionary to decode the sentence with
     :return: the decoded list of strings sentence
     """
     decoded = [None] * len(sentence)
@@ -227,25 +225,21 @@ def decode_sentence(sentence, dictionary):
     return decoded
 
 
-def produce_output(v_e_sents, v_f_sents, e_dict, f_dict, e_inv_dict, trans_probs, gold_alignments, performances, filename='results.dat'):
+def produce_output(f_sents, e_sents_orig, nr_f_words, e_sents, e_dict_inv, trans_probs, gold_alignments, performances, filename='results.dat'):
     """
     Produces a translation output for the specified set of sentences
-    :param f_sents: the set of french sentences
-    :param f_dict: string to integer index dictionary for french
-    :param e_sents: gold standard translations
-    :param e_dict: string to integer index dictionary for english
-    :param trans_probs: the current model (translation probabilities p(e_word|f_word)) = trans_probs[f_word][e_word] = probability
-    :param filename:
-    :return:
+    :param f_sents: the set of french validation sentences
+    :param e_sents_orig: not encoded set of english validation sentences
+    :param nr_f_words: total number of french corpus word types
+    :param e_sents: the set of english validation sentences
+    :param e_dict_inv: inverted index-english dictionary to decode alignment
+    :param trans_probs: current model
+    :param gold_alignments: annotated gold standard alignments
+    :param performances: model performances as measured during the last iteration of ME
+    :param filename: name of the file to save the result in
     """
-    if INDEX_WORDS:
-        e_sents = [encode_sentence(sent, e_dict) for sent in v_e_sents]
-        f_sents = [encode_sentence(sent, f_dict) for sent in v_f_sents]
-    else:
-        e_sents = v_e_sents
-        f_sents = v_f_sents
 
-    model_output = align_sentences(e_sents, f_sents, e_dict, trans_probs)
+    model_output = align_sentences(e_sents, f_sents, trans_probs, nr_f_words)
     f = open(filename, 'w')
     f.write("Model perplexity: {}\n".format(performances[0]))
     f.write("Average sentence likelihood: {}\n".format(performances[1]))
@@ -254,11 +248,11 @@ def produce_output(v_e_sents, v_f_sents, e_dict, f_dict, e_inv_dict, trans_probs
         translation = output[0]
         alignment = output[1]
         f.write("{}\nwas translated as \n{} \ngold standard translation: \n{}\n Predicted alignment: \n{}\n True alignment: \n{}\n\n"
-                .format(v_f_sents[i], decode_sentence(translation, e_inv_dict), v_e_sents[i], alignment, gold_alignments[i]))
+                .format(f_sents[i], translation, e_sents[i], alignment, gold_alignments[i]))
     f.close()
 
 
-def get_gold_alignments(filename = 'validation/dev.wa.nonullalign'):
+def get_gold_alignments(filename='validation/dev.wa.nonullalign'):
     """
     Returns a NLTK tuple representation of the gold standard alignments as specified in an EGYPT formatted file
     :param filename: path to the file with the alignment annotations
@@ -276,6 +270,7 @@ def get_gold_alignments(filename = 'validation/dev.wa.nonullalign'):
             index += 1
             alignments.append(sent_align)
             sent_align = [(annotation[1], annotation[2])]
+    alignments.append(sent_align)
     return alignments
 
 
@@ -298,12 +293,11 @@ def main():
 
     e_words = set(word.lower() for line in e_lines for word in line.split())
     nr_e_words = len(e_words)
-    e_dict = wordlist2dict(e_words) #.union("NULL"))
+    e_dict = wordlist2dict(e_words)
     e_dict_inv = inverse_dict(e_dict)
     f_words = set(word.lower() for line in f_lines for word in line.split())
     nr_f_words = len(f_words)
     f_dict = wordlist2dict(f_words)
-    f_dict_inv = inverse_dict(f_dict)
     if VERBOSE: print "The english dictionary contains {} words, the french one {}".format(nr_e_words, nr_f_words)
 
     e_sents = [[word.lower() for word in line.split()] for line in e_lines]
@@ -337,15 +331,67 @@ def main():
 
     gold_alignments = get_gold_alignments()
 
-    # TODO: Fix AER
-    # ref = Alignment([(0, 0), (1, 1), (2, 2)])
-    # test = Alignment([(0, 0), (1, 2), (2, 1)])
-    # print metrics.alignment_error_rate(ref, test)
+    # Train a IBM 1 model through Expectation Maximization
+    trans_probs = {}
+    f_e_counts = {}
+    total = {}
 
+    performances = []
+    for i in range(0, ITERATIONS):
+
+        for p_index, pair in enumerate(aligned):
+            e_sent = np.append(['NULL'], pair[0])
+            f_sent = pair[1]
+
+            if VERBOSE: print("Compute Normalization")
+            s_total = np.zeros(len(f_sent))
+            for f_index, f_word in enumerate(f_sent):
+                for e_word in e_sent:
+                    s_total[f_index] = get_trans_prob(f_word, e_word, trans_probs, nr_f_words)
+
+            if VERBOSE: print("Collect Counts")
+            for f_index, f_word in enumerate(f_sent):
+                for e_word in e_sent:
+                    # Update Counts
+                    if e_word in f_e_counts:
+                        if f_word in f_e_counts[e_word]:
+                            current_count = f_e_counts[e_word][f_word]
+                            f_e_counts[e_word][f_word] = current_count + get_trans_prob(f_word, e_word, trans_probs, nr_f_words) / s_total[f_index]
+                        else:
+                            f_e_counts[e_word][f_word] = get_trans_prob(f_word, e_word, trans_probs, nr_f_words) / s_total[f_index]
+                    else:
+                        f_e_counts[e_word] = {f_word: get_trans_prob(f_word, e_word, trans_probs, nr_f_words) / s_total[f_index]}
+
+                    # Update F Total
+                    if e_word in total:
+                        current_count = total[e_word]
+                        total[e_word] = current_count + get_trans_prob(f_word, e_word, trans_probs, nr_f_words) / s_total[f_index]
+                    else:
+                        total[e_word] = get_trans_prob(f_word, e_word, trans_probs, nr_f_words) / s_total[f_index]
+
+            print '\rIteration {}/{} - {:.0%}'.format(i+1, ITERATIONS, float(p_index) / TRAIN_LIMIT),
+            if p_index == TRAIN_LIMIT: break
+
+        if VERBOSE: print("Estimate Probabilities")
+        for e_word in total.keys():
+            for f_word in f_e_counts[e_word].keys():
+                if e_word in trans_probs:
+                    trans_probs[e_word][f_word] = f_e_counts[e_word][f_word] / total[e_word]
+                    # if VERBOSE: print f_e_counts[e_word][f_word]
+                else:
+                    trans_probs[e_word] = {f_word: f_e_counts[e_word][f_word] / total[e_word]}
+                    # if VERBOSE: print f_e_counts[e_word][f_word]
+
+        if VERBOSE: print("Evaluate Model")
+        [perplexity, avg_likelihood, avg_aer] = evaluate_model(v_f_sents_encoded, v_e_sents, nr_f_words, v_e_sents_encoded, e_dict_inv, trans_probs, gold_alignments)
+        performances.append((perplexity, avg_likelihood, avg_aer))
+        print ("Perplexity: {}".format(perplexity))
+        print ("Average likelihood: {}".format(avg_likelihood))
+        print ("Average AER: {}\n".format(avg_aer))
+
+    produce_output(v_f_sents_encoded, v_e_sents, nr_f_words, v_e_sents_encoded, e_dict_inv, trans_probs, gold_alignments, performances[-1])
     end = time.time()
     print("Execution time: {}".format(end - start))
-
-    print f_dict_inv[754]
 
 
 if __name__ == "__main__":
