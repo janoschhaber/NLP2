@@ -1,9 +1,14 @@
-Model perplexity: 165.308133303
+Model perplexity: nan
+Average sentence likelihood: 0.0
+Average sentence AER: 1.0
 
-chacun en lui - même est très complexe et le lien entre les deux le est encore davantage de sorte que pour beaucoup la situation présente est confuse . 
+['chacun', 'en', 'lui', '-', 'm\xc3\xaame', 'est', 'tr\xc3\xa8s', 'complexe', 'et', 'le', 'lien', 'entre', 'les', 'deux', 'le', 'est', 'encore', 'davantage', 'de', 'sorte', 'que', 'pour', 'beaucoup', 'la', 'situation', 'pr\xc3\xa9sente', 'est', 'confuse', '.']
 was translated as 
-most , the the even is very complex , the the between the two the is even more the makes the the , the situation the is each the 
+['each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each', 'each'] 
 gold standard translation: 
-each of them is very complex , but the link between the two is even more complex which makes the whole situation for most people understandably confusing . 
-
+['each', 'of', 'them', 'is', 'very', 'complex', ',', 'but', 'the', 'link', 'between', 'the', 'two', 'is', 'even', 'more', 'complex', 'which', 'makes', 'the', 'whole', 'situation', 'for', 'most', 'people', 'understandably', 'confusing', '.']
+ Predicted alignment: 
+[(1, 1), (2, 1), (3, 1), (4, 1), (5, 1), (6, 1), (7, 1), (8, 1), (9, 1), (10, 1), (11, 1), (12, 1), (13, 1), (14, 1), (15, 1), (16, 1), (17, 1), (18, 1), (19, 1), (20, 1), (21, 1), (22, 1), (23, 1), (24, 1), (25, 1), (26, 1), (27, 1), (28, 1), (29, 1)]
+ True alignment: 
+[(1, 1), (2, 2), (3, 3), (3, 4), (3, 5), (4, 6), (5, 7), (6, 8), (9, 10), (10, 11), (11, 12), (12, 13), (13, 14), (14, 16), (15, 17), (16, 18), (17, 15), (17, 18), (18, 19), (18, 20), (18, 21), (19, 27), (19, 28), (20, 24), (22, 25), (23, 22), (24, 23), (25, 23), (27, 27), (27, 28), (28, 29)]
 
