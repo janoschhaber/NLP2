@@ -15,6 +15,7 @@ __email__ = "janosch.haber@student.uva.nl"
 __status__ = "IBM1 Debugging Version"
 
 import numpy as np
+import pickle
 import time
 from nltk.translate import Alignment
 from nltk.translate import metrics
@@ -238,6 +239,9 @@ def produce_output(f_sents, e_sents_orig, nr_f_words, e_sents, e_dict_inv, trans
     :param performances: model performances as measured during the last iteration of ME
     :param filename: name of the file to save the result in
     """
+    pickle.dump( performances, open("performances.dat", "wb"))
+
+    performances = performances[-1]
 
     model_output = align_sentences(e_sents, f_sents, trans_probs, nr_f_words)
     f = open(filename, 'w')
@@ -250,6 +254,8 @@ def produce_output(f_sents, e_sents_orig, nr_f_words, e_sents, e_dict_inv, trans
         f.write("{}\nwas translated as \n{} \ngold standard translation: \n{}\n Predicted alignment: \n{}\n True alignment: \n{}\n\n"
                 .format(f_sents[i], translation, e_sents[i], alignment, gold_alignments[i]))
     f.close()
+
+
 
 
 def get_gold_alignments(filename='validation/dev.wa.nonullalign'):
@@ -385,11 +391,11 @@ def main():
         if VERBOSE: print("Evaluate Model")
         [perplexity, avg_likelihood, avg_aer] = evaluate_model(v_f_sents_encoded, v_e_sents, nr_f_words, v_e_sents_encoded, e_dict_inv, trans_probs, gold_alignments)
         performances.append((perplexity, avg_likelihood, avg_aer))
-        print ("Perplexity: {}".format(perplexity))
+        print ("\nPerplexity: {}".format(perplexity))
         print ("Average likelihood: {}".format(avg_likelihood))
         print ("Average AER: {}\n".format(avg_aer))
 
-    produce_output(v_f_sents_encoded, v_e_sents, nr_f_words, v_e_sents_encoded, e_dict_inv, trans_probs, gold_alignments, performances[-1])
+    produce_output(v_f_sents_encoded, v_e_sents, nr_f_words, v_e_sents_encoded, e_dict_inv, trans_probs, gold_alignments, performances)
     end = time.time()
     print("Execution time: {}".format(end - start))
 
