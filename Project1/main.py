@@ -10,7 +10,7 @@ __author__ = "Edwin Lima Valladares, Ioanna Sanida, Janosch Haber"
 __copyright__ = "Copyright 2017"
 __credits__ = ["Edwin Lima Valladares, Ioanna Sanida, Janosch Haber"]
 __license__ = "GPL"
-__version__ = "1.0.4"
+__version__ = "1.0.9"
 __email__ = "janosch.haber@student.uva.nl"
 __status__ = "IBM1 Debugging Version"
 
