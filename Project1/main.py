@@ -22,7 +22,7 @@ from nltk.translate import metrics
 
 INDEX_WORDS = False
 VERBOSE = False
-TRAIN_LIMIT = 10000
+TRAIN_LIMIT = 0
 ITERATIONS = 5
 VAL_LIMIT = 0
 
@@ -78,14 +78,13 @@ def get_trans_prob(f_word, e_word, trans_probs, nr_f_words):
         else:
             e_nr_entries = len(trans_probs[e_word])
             e_missing = nr_f_words - e_nr_entries
+            if e_missing == 0:
+                # TODO: Check what is happening here
+                # print ("No more words left, {} of {} indexed, {} isn't one of them.".format(e_nr_entries, nr_f_words, f_word))
+                return 0
             e_prob_mass = 0
             for entry in trans_probs[e_word].values():
                 e_prob_mass += entry
-            # TODO: Check for zero mass error:
-            # if float(1 - e_prob_mass) / e_missing == 0:
-            #   print "ERROR! Remaining robability mass is zero!"
-
-            # print("Not Found: Probability of {} given {} is {} with a remaining probability mass of {} and {} words not assigned yet ".format(f_word, e_word, float(1 - e_prob_mass) / e_missing, float(1 - e_prob_mass), e_missing))
             return float(1 - e_prob_mass) / e_missing
     else:
         # print("No Key: Probability of {} given {} is {}".format(f_word, e_word, float(1) / nr_f_words))
@@ -150,9 +149,11 @@ def align_sentences(e_sents, f_sents, trans_probs, nr_f_words):
                 # print("Probability for {} is {}".format(e_word, e_probs[e_index]))
             sent_pred_trans[f_index] = e_sent[np.argmax(e_probs)]
             # print("Most likely alignment is {}".format(e_sent[np.argmax(e_probs)]))
-            sent_alignment[f_index] = (np.argmax(e_probs)+1, f_index+1)
+            sent_alignment[f_index] = (np.argmax(e_probs), f_index+1)
 
         translations[pair_id] = sent_pred_trans
+        # Removing NULL productions
+        sent_alignment = [pair for pair in sent_alignment if pair[0] != 0]
         alignments[pair_id] = sent_alignment
     return zip(translations, alignments)
 
@@ -222,7 +223,7 @@ def decode_sentence(sentence, dictionary):
         if word in dictionary:
             decoded[index] = dictionary[word]
         else:
-            decoded[index] = 'NULL'
+            decoded[index] = 'null'
     return decoded
 
 
@@ -254,8 +255,6 @@ def produce_output(f_sents, e_sents_orig, nr_f_words, e_sents, e_dict_inv, trans
         f.write("{}\nwas translated as \n{} \ngold standard translation: \n{}\n Predicted alignment: \n{}\n True alignment: \n{}\n\n"
                 .format(f_sents[i], translation, e_sents[i], alignment, gold_alignments[i]))
     f.close()
-
-
 
 
 def get_gold_alignments(filename='validation/dev.wa.nonullalign'):
@@ -290,23 +289,26 @@ def main():
         print("ERROR: Training data not aligned properly!")
         quit()
 
-    train_size = len(f_lines)
-    print ("Train set size: {} sentences".format(train_size))
     if TRAIN_LIMIT > 0:
         e_lines = e_lines[0:TRAIN_LIMIT]
         f_lines = f_lines[0:TRAIN_LIMIT]
-    print ("Limited to {} sentences for debugging".format(TRAIN_LIMIT))
+
+    train_size = len(f_lines)
+    print ("Train set size: {} sentences".format(train_size))
+
+    print ("Limited to {} sentences for debugging".format(train_size))
 
     e_words = set(word.lower() for line in e_lines for word in line.split())
+    e_words = e_words.union(['null'])
     nr_e_words = len(e_words)
     e_dict = wordlist2dict(e_words)
     e_dict_inv = inverse_dict(e_dict)
     f_words = set(word.lower() for line in f_lines for word in line.split())
     nr_f_words = len(f_words)
     f_dict = wordlist2dict(f_words)
-    if VERBOSE: print "The english dictionary contains {} words, the french one {}".format(nr_e_words, nr_f_words)
+    print "The english dictionary contains {} words, the french one {}".format(nr_e_words, nr_f_words)
 
-    e_sents = [[word.lower() for word in line.split()] for line in e_lines]
+    e_sents = [[word.lower() for word in np.append('NULL', line.split())] for line in e_lines]
     f_sents = [[word.lower() for word in line.split()] for line in f_lines]
     if INDEX_WORDS:
         e_sents = [encode_sentence(sent, e_dict) for sent in e_sents]
@@ -325,7 +327,7 @@ def main():
         quit()
     print ("Validation set size: {} sentence(s)".format(len(v_f_lines)))
 
-    v_e_sents = [[word.lower() for word in line.split()] for line in v_e_lines]
+    v_e_sents = [[word.lower() for word in np.append('NULL', line.split())] for line in v_e_lines]
     v_f_sents = [[word.lower() for word in line.split()] for line in v_f_lines]
 
     if INDEX_WORDS:
@@ -339,21 +341,23 @@ def main():
 
     # Train a IBM 1 model through Expectation Maximization
     trans_probs = {}
-    f_e_counts = {}
-    total = {}
 
     performances = []
     for i in range(0, ITERATIONS):
+        f_e_counts = {}
 
+        # E-Step
         for p_index, pair in enumerate(aligned):
-            e_sent = np.append(['NULL'], pair[0])
+            e_sent = pair[0]
             f_sent = pair[1]
 
             if VERBOSE: print("Compute Normalization")
             s_total = np.zeros(len(f_sent))
             for f_index, f_word in enumerate(f_sent):
+                e_sum = 0
                 for e_word in e_sent:
-                    s_total[f_index] = get_trans_prob(f_word, e_word, trans_probs, nr_f_words)
+                    e_sum += get_trans_prob(f_word, e_word, trans_probs, nr_f_words)
+                s_total[f_index] = e_sum
 
             if VERBOSE: print("Collect Counts")
             for f_index, f_word in enumerate(f_sent):
@@ -368,25 +372,27 @@ def main():
                     else:
                         f_e_counts[e_word] = {f_word: get_trans_prob(f_word, e_word, trans_probs, nr_f_words) / s_total[f_index]}
 
-                    # Update F Total
-                    if e_word in total:
-                        current_count = total[e_word]
-                        total[e_word] = current_count + get_trans_prob(f_word, e_word, trans_probs, nr_f_words) / s_total[f_index]
-                    else:
-                        total[e_word] = get_trans_prob(f_word, e_word, trans_probs, nr_f_words) / s_total[f_index]
+            print '\rIteration {}/{} - {:.0%}'.format(i+1, ITERATIONS, float(p_index) / train_size),
+            if p_index == train_size: break
 
-            print '\rIteration {}/{} - {:.0%}'.format(i+1, ITERATIONS, float(p_index) / TRAIN_LIMIT),
-            if p_index == TRAIN_LIMIT: break
-
+        # M-Step
         if VERBOSE: print("Estimate Probabilities")
-        for e_word in total.keys():
+        for e_word in f_e_counts.keys():
+            e_total = sum(f_e_counts[e_word].values())
             for f_word in f_e_counts[e_word].keys():
                 if e_word in trans_probs:
-                    trans_probs[e_word][f_word] = f_e_counts[e_word][f_word] / total[e_word]
+                    # if f_e_counts[e_word][f_word] / total[e_word] < 0: print ("Below 0 probability!")
+                    trans_probs[e_word][f_word] = f_e_counts[e_word][f_word] / e_total
                     # if VERBOSE: print f_e_counts[e_word][f_word]
                 else:
-                    trans_probs[e_word] = {f_word: f_e_counts[e_word][f_word] / total[e_word]}
+                    # if f_e_counts[e_word][f_word] / total[e_word] < 0: print ("Below 0 probability!")
+                    trans_probs[e_word] = {f_word: f_e_counts[e_word][f_word] / e_total}
                     # if VERBOSE: print f_e_counts[e_word][f_word]
+
+        if VERBOSE: print("Sanity check")
+        for e_word in trans_probs.keys():
+            e_total = sum(f_e_counts[e_word].values())
+            if e_total < 0.9: print ("Probability mass for {} is {}".format(e_word, e_total))
 
         if VERBOSE: print("Evaluate Model")
         [perplexity, avg_likelihood, avg_aer] = evaluate_model(v_f_sents_encoded, v_e_sents, nr_f_words, v_e_sents_encoded, e_dict_inv, trans_probs, gold_alignments)
